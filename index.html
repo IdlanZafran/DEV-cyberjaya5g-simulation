@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CJ5G Junction Simulation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">5G</div>
+      <div>
+        <h1>Smart Traffic Light – Real-World Simulation</h1>
+        <p>Persiaran Ceria × Jalan Cyber Point 2 / Jln Fauna 1, Cyberjaya · scaled from the ESP32 prototype to 4 approaches, 10 lanes, 30 sensors</p>
+      </div>
+    </div>
+    <div class="top-stats">
+      <span>Sim time <b id="sim-clock">0.0 s</b></span>
+      <span>Phase <b id="sim-phase">--</b></span>
+      <span>Vehicles <b id="sim-vehicles">0</b></span>
+      <button class="btn btn-sm" id="btn-sound" title="Mute / unmute alarm and sirens">🔊 Sound on</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ================= canvas ================= -->
+    <section class="stage">
+      <canvas id="sim-canvas"></canvas>
+
+      <div class="alerts">
+        <div class="alert alert-warning hidden" id="alert-speeding">
+          <span class="alert-icon">⚠</span>
+          <div><strong>Speeding Detected – Delaying Cross Traffic</strong><span id="alert-speeding-detail"></span></div>
+        </div>
+        <div class="alert alert-critical hidden" id="alert-collision">
+          <span class="alert-icon">⛔</span>
+          <div><strong>CRITICAL: Suspected Collision (Exit Sensor timeout)</strong><span id="alert-collision-detail"></span></div>
+          <button class="btn" id="btn-silence">🔕 Silence alarm</button>
+          <button class="btn btn-light" id="btn-reset-emergency">Clear wreck &amp; reset junction</button>
+        </div>
+        <div class="alert alert-dispatch hidden" id="alert-dispatch">
+          <span class="alert-icon">🚓</span>
+          <div><strong id="alert-dispatch-title">Emergency services dispatched</strong><span id="alert-dispatch-detail"></span></div>
+        </div>
+        <div class="alert alert-priority hidden" id="alert-priority">
+          <span class="alert-icon">🚑</span>
+          <div><strong>Emergency Vehicle Priority – 5G V2X preemption</strong><span id="alert-priority-detail"></span></div>
+        </div>
+        <div class="alert alert-muted hidden" id="alert-undetected">
+          <span class="alert-icon">💥</span>
+          <div><strong>Crash occurred – anti-collision system is OFF</strong><span>No prediction, no cross-traffic hold, no alert was raised.</span></div>
+          <button class="btn" id="btn-clear-wreck">Clear wreck</button>
+        </div>
+      </div>
+
+      <div class="scenario-caption" id="scenario-caption">
+        <strong id="caption-title">Normal Flow</strong>
+        <span id="caption-text"></span>
+      </div>
+
+      <div class="stage-tools">
+        <button class="btn icon" id="btn-zoom-in" title="Zoom in">＋</button>
+        <button class="btn icon" id="btn-zoom-out" title="Zoom out">－</button>
+        <button class="btn icon" id="btn-zoom-fit" title="Fit view">⤢</button>
+        <button class="btn icon" id="btn-zoom-box" title="Zoom to conflict zone">◎</button>
+      </div>
+
+      <div class="legend">
+        <span><i class="lg" style="border-color:#22d3ee"></i>Entry Sensor</span>
+        <span><i class="lg" style="border-color:#f59e0b"></i>Stopline Sensor</span>
+        <span><i class="lg" style="border-color:#4ade80"></i>Exit Sensor</span>
+        <span><i class="lg fill" style="background:rgba(245,158,11,.6)"></i>Conflict-zone watch</span>
+        <span>📶 sensor sending a detection</span>
+        <span class="muted">Scroll = zoom · drag = pan · double-click = fit</span>
+      </div>
+    </section>
+
+    <!-- ================= side panel ================= -->
+    <aside class="panel">
+      <div class="card">
+        <h2>Scenarios</h2>
+        <div class="scenario-buttons">
+          <button class="scenario-btn" data-scenario="normal"><b>Normal Flow</b><small>All cars obey the rules</small></button>
+          <button class="scenario-btn warn" data-scenario="nearMiss"><b>Near-Miss</b><small>Red-light runner, cross traffic delayed</small></button>
+          <button class="scenario-btn crit" data-scenario="collision"><b>Collision</b><small>Exit sensor timeout → alert</small></button>
+          <button class="scenario-btn blue" data-scenario="emergency"><b>Emergency Vehicle</b><small>5G V2X priority green wave</small></button>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="system-enabled" checked>
+          <span class="slider"></span>
+          <span class="switch-label">Anti-collision system <b id="system-state">ON</b></span>
+        </label>
+        <p class="muted small">Tip: run <b>Near-Miss</b> with the system OFF to see the collision it prevents.</p>
+      </div>
+
+      <div class="card">
+        <h2>Playback</h2>
+        <div class="row">
+          <button class="btn" id="btn-pause">⏸ Pause</button>
+          <div class="segmented" id="speed-buttons">
+            <button data-speed="0.25">¼×</button><button data-speed="0.5">½×</button><button data-speed="1" class="active">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
+          </div>
+        </div>
+        <label class="range-row">Traffic density <input type="range" id="density" min="0" max="2" step="0.1" value="1"><b id="density-value">1.0×</b></label>
+        <div class="row small">
+          <label><input type="checkbox" id="show-sensors" checked> sensors</label>
+          <label><input type="checkbox" id="show-labels" checked> labels</label>
+          <button class="btn btn-sm" id="btn-spawn-violator">+ random red-light runner</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Signals</h2>
+        <div class="signals" id="signals"></div>
+        <div class="phase-bar" id="phase-bar"></div>
+      </div>
+
+      <div class="card">
+        <h2>Scenario steps</h2>
+        <ol class="steps" id="steps"></ol>
+      </div>
+
+      <div class="card">
+        <h2>Statistics</h2>
+        <div class="stats">
+          <div><b id="st-measured">0</b><span>speeds measured</span></div>
+          <div><b id="st-speeding">0</b><span>above v<sub>crit</sub></span></div>
+          <div class="warn"><b id="st-violations">0</b><span>speeding red-light runs</span></div>
+          <div><b id="st-holds">0</b><span>cross holds <i id="st-cuts"></i> <i id="st-dilemma"></i></span></div>
+          <div class="ok"><b id="st-safe">0</b><span>safe passages</span></div>
+          <div class="crit"><b id="st-collisions">0</b><span>collisions detected</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Physics</h2>
+        <div class="physics" id="physics"></div>
+      </div>
+
+      <div class="card">
+        <h2>Event log</h2>
+        <ul class="log" id="log"></ul>
+      </div>
+    </aside>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/vehicle.js"></script>
+  <script src="js/controller.js"></script>
+  <script src="js/sim.js"></script>
+  <script src="js/scenarios.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
